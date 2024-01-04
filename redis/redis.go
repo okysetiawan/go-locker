@@ -9,12 +9,17 @@ import (
 	"time"
 )
 
+type Instance interface {
+	redis.Cmdable
+	Close() error
+}
+
 type redisLocker struct {
-	redis *redis.Client
+	instance Instance
 }
 
 func (r *redisLocker) Lock(ctx context.Context, key string, timeout time.Duration) error {
-	isLocked, err := r.redis.SetNX(ctx, key, true, timeout).Result()
+	isLocked, err := r.instance.SetNX(ctx, key, true, timeout).Result()
 	if err != nil {
 		return eris.Wrap(errors.ErrLock, err.Error())
 	}
@@ -26,7 +31,7 @@ func (r *redisLocker) Lock(ctx context.Context, key string, timeout time.Duratio
 }
 
 func (r *redisLocker) Unlock(ctx context.Context, key string) error {
-	err := r.redis.Del(ctx, key).Err()
+	err := r.instance.Del(ctx, key).Err()
 	if err != nil {
 		return eris.Wrap(errors.ErrUnlock, err.Error())
 	}
@@ -35,7 +40,7 @@ func (r *redisLocker) Unlock(ctx context.Context, key string) error {
 }
 
 func (r *redisLocker) Close() error {
-	err := r.redis.Close()
+	err := r.instance.Close()
 	if err != nil {
 		return eris.Wrap(errors.ErrClose, err.Error())
 	}
@@ -43,6 +48,22 @@ func (r *redisLocker) Close() error {
 	return nil
 }
 
-func NewLocker() locker.Locker {
-	return &redisLocker{}
+func NewLockerFromInstance(instance Instance) locker.Locker {
+	return &redisLocker{instance: instance}
+}
+
+func NewLockerFromRedisClient(conf *redis.Client) locker.Locker {
+	return &redisLocker{instance: conf}
+}
+
+func NewLockerFromRedisConfig(conf *redis.Options) locker.Locker {
+	return &redisLocker{instance: redis.NewClient(conf)}
+}
+
+func NewLockerFromRedisClusterClient(conf *redis.ClusterClient) locker.Locker {
+	return &redisLocker{instance: conf}
+}
+
+func NewLockerFromRedisClusterConfig(conf *redis.ClusterOptions) locker.Locker {
+	return &redisLocker{instance: redis.NewClusterClient(conf)}
 }
